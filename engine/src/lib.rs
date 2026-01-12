@@ -521,7 +521,7 @@ pub mod collide {
 
             // If they are both in-line and parallel, t will be inf as any value of t satisfies the series of
             // equations. We have to manually check for this case.
-            let (t_a, t_b) = if slope(&a_basis) == slope(&b_basis) {
+            let (t_a, t_b) = if slope(&a_basis) == slope(&b_basis)  {
                 // There is no more calculation we can do with the data here
                 return CollisionPoint::Parallel;
             } else {
@@ -596,6 +596,7 @@ pub mod collide {
                             })
                         }
                         CollisionPoint::Parallel => {
+
                             // TODO (works without this but less complete)
                         }
                         CollisionPoint::NonColliding => {
