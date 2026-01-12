@@ -62,11 +62,12 @@ async fn main() {
         ],
         Environment::build(
             vec![
-                "p=40",
-                "r=sqrt((x_A-p)^2+(y_A-p)^2)",
-                "hatr=((x_A-p)*hati+(y_A-p)*hatj)/r",
-                "G=200",
-                "a_A=-G*hatr",
+                // "p=40",
+                // "r=sqrt((x_A-p)^2+(y_A-p)^2)",
+                // "hatr=((x_A-p)*hati+(y_A-p)*hatj)/r",
+                // "G=200",
+                // "a_A=-G*hatr",
+                "alpha_A=5hatk"
             ],
             engine::math::solve::builtin::functions(),
             engine::math::solve::builtin::constants(),

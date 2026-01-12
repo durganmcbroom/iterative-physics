@@ -309,7 +309,7 @@ impl<S: Space + Clone> Engine<S> {
                         $state.velocity = v.clone();
                         $state.displacement = $state.displacement.plus(&v.scale(self.delta_t));
                     } else {
-                        let a = eval!($acceleration, $body.name, Linear)?;
+                        let a = eval!($acceleration, $body.name, $kind)?;
 
                         if let Some(a) = a {
                             $state.velocity = <$vec_kind>::new(
