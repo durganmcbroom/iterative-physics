@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, ArrowLeft, Save, Trash2 } from 'lucide-react';
+import React, {useState, useEffect} from 'react';
+import {Plus, ArrowLeft, Save, Trash2, Pi} from 'lucide-react';
 import type {Body, BodyFormState} from '../types';
 
 interface BodyFormProps {
@@ -12,10 +12,10 @@ interface BodyFormProps {
 
 const DEFAULT_FORM: BodyFormState = {
     name: "B", color: "#3b82f6", mass: 1, width: 40, height: 40,
-    posX: 0, posY: 0, velX: 0, velY: 0,
+    posX: 0, posY: 0, velX: 0, velY: 0, rot: 0
 };
 
-export const BodyForm: React.FC<BodyFormProps> = ({ mode, initialBody, onSave, onCancel, onDelete }) => {
+export const BodyForm: React.FC<BodyFormProps> = ({mode, initialBody, onSave, onCancel, onDelete}) => {
     const [form, setForm] = useState<BodyFormState>(DEFAULT_FORM);
 
     useEffect(() => {
@@ -30,18 +30,22 @@ export const BodyForm: React.FC<BodyFormProps> = ({ mode, initialBody, onSave, o
                 posY: initialBody.linear.displacement.y,
                 velX: initialBody.linear.velocity.x,
                 velY: initialBody.linear.velocity.y,
+                rot: initialBody.angular.displacement,
             });
         } else {
             setForm(DEFAULT_FORM);
         }
     }, [mode, initialBody]);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = e.target;
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, transform: (t: any) => any = (t) => parseFloat(t)) => {
+        const {name, value} = e.target;
+
         setForm(prev => ({
             ...prev,
-            [name]: (name === 'name' || name === 'color') ? value : parseFloat(value) || 0
+            [name]: transform(value)
         }));
+
+        console.log(form)
     };
 
     return (
@@ -49,13 +53,13 @@ export const BodyForm: React.FC<BodyFormProps> = ({ mode, initialBody, onSave, o
             <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                 <div className="flex items-center gap-3">
                     <button onClick={onCancel} className="p-1 hover:bg-gray-200 rounded text-gray-500">
-                        <ArrowLeft size={16} />
+                        <ArrowLeft size={16}/>
                     </button>
                     <h2 className="text-sm font-semibold text-gray-800">{mode === 'create' ? 'Create Body' : 'Edit Body'}</h2>
                 </div>
                 {mode === 'edit' && (
                     <button onClick={onDelete} className="text-red-400 hover:text-red-600 p-1 hover:bg-red-50 rounded">
-                        <Trash2 size={16} />
+                        <Trash2 size={16}/>
                     </button>
                 )}
             </div>
@@ -75,7 +79,7 @@ export const BodyForm: React.FC<BodyFormProps> = ({ mode, initialBody, onSave, o
                                 type="text"
                                 name="name"
                                 value={form.name}
-                                onChange={handleInputChange}
+                                onChange={(e) => handleInputChange(e, t => t)}
                                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-blue-500 text-sm"
                             />
                         </div>
@@ -86,7 +90,7 @@ export const BodyForm: React.FC<BodyFormProps> = ({ mode, initialBody, onSave, o
                                     type="color"
                                     name="color"
                                     value={form.color}
-                                    onChange={handleInputChange}
+                                    onChange={(e) => handleInputChange(e, t => t)}
                                     className="w-full h-full p-0 border-0 rounded cursor-pointer"
                                 />
                             </div>
@@ -107,7 +111,8 @@ export const BodyForm: React.FC<BodyFormProps> = ({ mode, initialBody, onSave, o
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-gray-400 mb-1 uppercase">MOI</label>
-                            <div className="w-full px-3 py-2 bg-gray-100 border border-transparent rounded text-sm font-mono text-gray-500">
+                            <div
+                                className="w-full px-3 py-2 bg-gray-100 border border-transparent rounded text-sm font-mono text-gray-500">
                                 {(form.mass / 12 * (Math.pow(form.width, 2) + Math.pow(form.height, 2))).toFixed(1)}
                             </div>
                         </div>
@@ -115,7 +120,9 @@ export const BodyForm: React.FC<BodyFormProps> = ({ mode, initialBody, onSave, o
 
                     {/* Shape */}
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-2 uppercase border-b border-gray-100 pb-1">Shape: Rectangle</label>
+                        <label
+                            className="block text-xs font-medium text-gray-500 mb-2 uppercase border-b border-gray-100 pb-1">Shape:
+                            Rectangle</label>
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="text-xs text-gray-400">Width</label>
@@ -142,7 +149,9 @@ export const BodyForm: React.FC<BodyFormProps> = ({ mode, initialBody, onSave, o
 
                     {/* Initial State */}
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-2 uppercase border-b border-gray-100 pb-1">State Vectors</label>
+                        <label
+                            className="block text-xs font-medium text-gray-500 mb-2 uppercase border-b border-gray-100 pb-1">State
+                            Vectors</label>
                         <div className="grid grid-cols-2 gap-3 mb-3">
                             <div>
                                 <label className="text-xs text-gray-400">Pos X</label>
@@ -187,6 +196,21 @@ export const BodyForm: React.FC<BodyFormProps> = ({ mode, initialBody, onSave, o
                                 />
                             </div>
                         </div>
+                        <div className="">
+                            <label className="text-xs text-gray-400">Rotation</label>
+                            <div className="mt-1">
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="number"
+                                        name="rot"
+                                        value={form.rot / Math.PI}
+                                        onChange={(e)=>handleInputChange(e, (t) => t*Math.PI)}
+                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-blue-500 text-sm font-mono"
+                                    />
+                                    <Pi strokeWidth={3} className="text-gray-600"/>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -197,7 +221,7 @@ export const BodyForm: React.FC<BodyFormProps> = ({ mode, initialBody, onSave, o
                     onClick={() => onSave(form)}
                     className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded shadow-sm flex items-center justify-center gap-2 transition-colors"
                 >
-                    {mode === 'create' ? <Plus size={16} /> : <Save size={16} />}
+                    {mode === 'create' ? <Plus size={16}/> : <Save size={16}/>}
                     {mode === 'create' ? 'Create' : 'Save Changes'}
                 </button>
             </div>

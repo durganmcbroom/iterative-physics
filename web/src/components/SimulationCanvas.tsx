@@ -1,6 +1,6 @@
-import React, {useEffect, useRef} from 'react';
+import React, {useCallback, useEffect, useRef} from 'react';
 import {Move, ZoomIn} from 'lucide-react';
-import type {Body} from '../types';
+import type {Body, Vector} from '../types';
 import {useCanvasTransform} from '../hooks/useCanvasTransform';
 import {Body2D, Engine2D} from "interop";
 
@@ -9,25 +9,114 @@ const FPS = 1 / 60.
 interface SimulationCanvasProps {
     bodies: Body[];
     running: boolean;
-    equations: string[]
+    equations: string[];
+    onError: (msg: string) => void;
+    track: string | null;
 }
 
-export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({bodies, running, equations}) => {
+export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({bodies, running, equations, onError, track }) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const {viewTransform, handlers} = useCanvasTransform(1);
     const runningRef = useRef<boolean>(false);
-    const engine = useRef<Engine2D | null>(null);
+    const engineRef = useRef<Engine2D | null>(null);
+    const trackRef = useRef<string | null>(null);
+    const collisionPoints = useRef<{
+        point: Vector,
+        time: number
+    }[]>([])
+
+    let draw = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const engine = engineRef.current;
+
+        const track = trackRef.current
+        if (track && engine) {
+            let body = engine.get_state().find((s) => s.name() == track);
+
+            if (body) {
+                viewTransform.current = {
+                    x: -body.x() * viewTransform.current.scale + (canvas.width / 2),
+                    y: body.y() * viewTransform.current.scale + (canvas.width / 2),
+                    scale: viewTransform.current.scale
+                }
+            }
+        }
+
+        const {x: transX, y: transY, scale} = viewTransform.current;
+
+        // Clear
+        ctx.fillStyle = '#f9fafb';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.save();
+        ctx.translate(transX, transY);
+        ctx.scale(scale, scale);
+
+        // Draw Grid
+        drawGrid(ctx, scale);
+
+        // Draw Origin
+        drawOrigin(ctx, scale);
+
+        if (!engine || !runningRef.current) {
+            bodies.forEach((body) => {
+                drawBody(ctx, body.linear.displacement.x, body.linear.displacement.y, body.angular.displacement, body.name, scale, bodies)
+            })
+        } else {
+            try {
+                let tick = engine.tick()
+
+                engine.get_state().forEach((body) => {
+                    drawBody(ctx, body.x(), body.y(), body.theta(), body.name(), scale, bodies)
+                })
+
+                collisionPoints.current = collisionPoints.current.filter((x) => {
+                    return Date.now() - x.time < 1000
+                })
+
+                collisionPoints.current.push(...tick.collisions().map((x) => ({
+                    point: {
+                        x: x.x,
+                        y: x.y
+                    } as Vector,
+                    time: Date.now()
+                })))
+
+                collisionPoints.current.forEach(({point, time}) => {
+                    ctx.save();
+                    ctx.translate(point.x, -point.y)
+
+                    const radius = (Date.now() - time) / 100
+                    ctx.beginPath()
+                    ctx.strokeStyle = `rgba(255, 0, 0, ${1 - (Date.now() - time) / 1000})`;
+                    ctx.lineWidth = 2 / scale;
+                    ctx.ellipse(0, 0, radius, radius, 0, 0, 2 * Math.PI)
+                    ctx.stroke();
+
+                    ctx.restore();
+                })
+            } catch (e) {
+                runningRef.current = false;
+                engineRef.current = null;
+                onError(`${e}`)
+            }
+        }
+
+        ctx.restore();
+    }, [canvasRef.current, bodies]);
 
     useEffect(() => {
         runningRef.current = running;
 
-        console.log(equations)
-        console.log(bodies)
-
         if (running) {
             try {
-                engine.current = Engine2D.new(
+                console.log(JSON.stringify(bodies))
+                engineRef.current = Engine2D.new(
                     bodies.map((body) => {
                         return Body2D.new(
                             body.name,
@@ -38,81 +127,68 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({bodies, runni
                             body.linear.displacement.y,
                             body.linear.velocity.x,
                             body.linear.velocity.y,
+                            body.angular.displacement
                         )
                     }),
                     equations?.filter((e) => e.length != 0) ?? [],
                     FPS
                 )
             } catch (e) {
-                console.error(e);
+                runningRef.current = false;
+                engineRef.current = null;
+                onError(`${e}`)
             }
         } else {
-            engine.current = null
+            engineRef.current = null
         }
     }, [running]);
 
     useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        let animationFrameId: number;
-
         const resizeCanvas = () => {
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+
             if (containerRef.current && canvas) {
                 canvas.width = containerRef.current.clientWidth;
                 canvas.height = containerRef.current.clientHeight;
+
+                draw()
             }
         };
 
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
+        const resizeObserver = new ResizeObserver(resizeCanvas);
+
+        if (containerRef.current) {
+            resizeObserver.observe(containerRef.current);
+        }
+
+        return () => {
+            window.removeEventListener('resize', resizeCanvas);
+            resizeObserver.disconnect();
+        }
+    }, [containerRef]);
+
+    useEffect(() => {
+        let animationFrameId: number;
+
         const render = () => {
-            const {x: transX, y: transY, scale} = viewTransform.current;
-
-            // Clear
-            ctx.fillStyle = '#f9fafb';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            ctx.save();
-            ctx.translate(transX, transY);
-            ctx.scale(scale, scale);
-
-            // Draw Grid
-            drawGrid(ctx, scale);
-
-            // Draw Origin
-            drawOrigin(ctx, scale);
-
-            engine.current?.tick()
-
-            // Draw Bodies
-            if (runningRef.current) {
-                // console.log(engine.current?.get_state()[0].y())
-                // engine.current?.get_state().forEach((body) => {
-                //     console.log("Hey")
-                // })
-                engine.current?.get_state().forEach((body) => {
-                    drawBody(ctx, body.x(), body.y(), body.theta(), body.name(), scale, bodies)
-                })
-            } else {
-                bodies.forEach((body) => {
-                    drawBody(ctx, body.linear.displacement.x, body.linear.displacement.y, body.angular.displacement, body.name, scale, bodies)
-                })
-            }
-
-            ctx.restore();
+            draw()
             animationFrameId = requestAnimationFrame(render);
         };
 
         render();
+
         return () => {
-            window.removeEventListener('resize', resizeCanvas);
             cancelAnimationFrame(animationFrameId);
         };
     }, [bodies]); // Re-bind effect if bodies change
+
+    useEffect(() => {
+        trackRef.current = track
+    }, [track])
 
     return (
         <div
@@ -120,15 +196,16 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({bodies, runni
             className="flex-1 relative bg-gray-50 overflow-hidden cursor-move"
             {...handlers}
         >
-            <canvas ref={canvasRef} className="block touch-none"/>
+            <canvas
+                ref={canvasRef}
+                className="block touch-none w-full h-full"
+            />
             <div className="absolute top-4 left-4 pointer-events-none">
                 <div
                     className="bg-white/90 backdrop-blur px-2 py-1 rounded border border-gray-200 text-[10px] text-gray-400 font-mono flex gap-3">
                     <span className="flex items-center gap-1"><Move size={10}/> Pan</span>
                     <span className="flex items-center gap-1"><ZoomIn size={10}/> Scroll to Zoom</span>
                 </div>
-            </div>
-            <div className="absolute top-4 right-4 pointer-events-none">
             </div>
         </div>
     );
@@ -178,7 +255,7 @@ function drawBody(
 
     ctx.save();
     ctx.translate(x, -y);
-    ctx.rotate(rotation);
+    ctx.rotate(-rotation); // Negate rotation to go into counter clockwise
 
     ctx.fillStyle = color;
     ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';

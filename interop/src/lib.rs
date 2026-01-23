@@ -1,16 +1,40 @@
 use engine::collide::Collide2D;
-use engine::err::EngineResult;
-use engine::math::{Column, Vector};
 use engine::math::solve::Environment;
+use engine::math::{Column, Vector};
 use engine::spaces::Space2D;
-use engine::{Body, BodyProperties, BodyState, Engine, Shape};
+use engine::{Body, BodyProperties, BodyState, Engine, Shape, Tick};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 pub type EngineError = String;
 
 #[wasm_bindgen]
+pub struct Vec2D {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[wasm_bindgen]
 pub struct Engine2D {
     inner: Engine<Space2D>,
+}
+
+#[wasm_bindgen]
+pub struct Tick2D {
+    inner: Tick<Space2D>,
+}
+
+#[wasm_bindgen]
+impl Tick2D {
+    pub fn collisions(&self) -> Vec<Vec2D> {
+        self.inner
+            .collisions
+            .iter()
+            .map(|x| Vec2D {
+                x: *x.get(0),
+                y: *x.get(1),
+            })
+            .collect()
+    }
 }
 
 #[wasm_bindgen]
@@ -36,8 +60,11 @@ impl Engine2D {
         })
     }
 
-    pub fn tick(&mut self) -> Result<(), EngineError> {
-        self.inner.tick().map_err(|x| x.kind.to_string())
+    pub fn tick(&mut self) -> Result<Tick2D, EngineError> {
+        self.inner
+            .tick()
+            .map_err(|x| x.kind.to_string())
+            .map(|x| Tick2D { inner: x })
     }
 
     pub fn get_state(&self) -> Vec<Body2D> {
@@ -66,6 +93,8 @@ impl Body2D {
         y: f64,
         v_x: f64,
         v_y: f64,
+
+        rot: f64,
     ) -> Self {
         Body2D {
             inner: Body {
@@ -77,7 +106,7 @@ impl Body2D {
                     acceleration: Column::vector([0.0, 0.0]),
                 },
                 angular: BodyState {
-                    displacement: Column::empty(),
+                    displacement: Column::vector([rot]),
                     velocity: Column::empty(),
                     acceleration: Column::empty(),
                 },

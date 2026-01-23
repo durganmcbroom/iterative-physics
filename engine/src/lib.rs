@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use crate::collide::{Collide, Collision};
 use crate::err::{EngineResult, ErrorKind};
 use crate::math::integration::{leapfrog_displacement, leapfrog_velocity};
@@ -19,6 +20,8 @@ pub trait Space {
 
     const LINEAR_BASES: &'static [Basis];
     const ANGULAR_BASES: &'static [Basis];
+
+
 
     fn cross_both(w: &Self::Angular, r: &Self::Linear) -> Self::Linear;
     fn cross_linear(a: &Self::Linear, b: &Self::Linear) -> Self::Angular;
@@ -93,7 +96,6 @@ impl<S: Space> Body<S> {
             properties,
         }
     }
-
 }
 
 pub struct Engine<S: Space> {
@@ -102,8 +104,13 @@ pub struct Engine<S: Space> {
     collider: Box<dyn Collide<S>>,
     delta_t: f64,
     restitution: f64,
-    // unit_vectors: Vec<String>,
 }
+
+pub struct Tick<S: Space> {
+    pub collisions: Vec<S::Linear>,
+}
+
+const CORRECTIVE_FRAMES: usize = 100;
 
 impl<S: Space + Clone> Engine<S> {
     pub fn new(
@@ -122,30 +129,46 @@ impl<S: Space + Clone> Engine<S> {
         }
     }
 
-    fn eval_impl<O: Vector>(
+    fn eval_impl<Primary: Vector, Secondary: Vector>(
         var: &'static str,
         owner: String,
+
         bases: &'static [Basis],
+        selector: fn(&Body<S>) -> &Primary,
+
+        extra_bases: &'static [Basis],
+        extra_selector: fn(&Body<S>) -> &Secondary,
+
         env: &Environment,
         bodies: &Vec<Body<S>>,
-        selector: fn(&Body<S>) -> &O,
     ) -> EngineResult<Option<Vec<f64>>> {
         let mut result = Vec::new();
         let mut overrides = HashMap::new();
 
-        for i in 0..O::dof() {
+        // Set all bases to 0 (hati, hatj, hatk etc.)
+        for i in 0..Primary::dof() {
             overrides.insert(bases[i].name.to_string(), 0.0);
         }
 
+        // Initialize body constants / properties
         for x in bodies {
-            for i in 0..O::dof() {
+            for i in 0..Primary::dof() {
                 overrides.insert(format!("{}_{}", bases[i].axis, x.name), *selector(x).get(i));
             }
+
+            for i in 0..Secondary::dof() {
+                overrides.insert(format!("{}_{}", extra_bases[i].axis, x.name), *extra_selector(x).get(i));
+            }
+
+            overrides.insert(format!("m_{}", x.name), x.properties.mass);
+            overrides.insert(format!("I_cm_{}", x.name), x.properties.moi);
         }
 
-        for i in 0..O::dof() {
-            let form = format!("{}_{}", var, owner);
+        for i in 0..Primary::dof() {
+            // Work on basis i (set it to 1).
             overrides.insert(bases[i].name.to_string(), 1.0);
+
+            let form = format!("{}_{}", var, owner);
             let part = match env.evaluate(form.clone(), overrides.clone()) {
                 Ok(x) => Ok(Some(x)),
                 Err(e) => match e.kind.clone() {
@@ -247,41 +270,69 @@ impl<S: Space + Clone> Engine<S> {
     fn apply_impulse(a: &mut Body<S>, b: &Body<S>, collision: Collision<S>, restitution: f64) {
         let impulse = Self::calculate_impulse(a, b, &collision, restitution);
 
-        // println!("Body: {}", a.name);
-        // println!("{}", collision.normal);
         let delta_v = collision.normal.scale(impulse / a.properties.mass);
         let delta_omega =
-            S::cross_linear(&collision.normal.scale(impulse / a.properties.moi), &collision.a,);
+            S::cross_linear(&collision.a, &collision.normal.scale(impulse / a.properties.moi));
 
         a.linear.velocity = a.linear.velocity.plus(&delta_v.scale(-1.0));
         a.angular.velocity = a.angular.velocity.plus(&delta_omega);
-
-        // b.linear.velocity = b.linear.velocity.plus(&delta_v.scale(-1.0));
-        // b.angular.velocity = b.angular.velocity.plus(&delta_omega.scale(-1.0));
     }
 
-    pub fn tick(&mut self) -> EngineResult<()> {
+    // Push A away
+    fn apply_correction(
+        collider: &Box<dyn Collide<S>>,
+        a: &mut Body<S>,
+        b: &Body<S>,
+        mut collision: Collision<S>
+    ) {
+        // Start with the inverse of the distance between them. (Small distance, large correction, etc.) and account for mass.
+        for _ in 0..CORRECTIVE_FRAMES {
+            let correction = 1.0
+                    / a.linear.displacement.plus(&b.linear.displacement.scale(-1.0)).magnitude()
+                    / a.properties.mass;
+
+            a.linear.displacement = a.linear.displacement.plus(&collision.normal.scale(-correction));
+
+            if let Some(c) = collider.collide(a, b) {
+                collision = c;
+            } else {
+                break
+            }
+        }
+    }
+
+    pub fn tick(&mut self) -> EngineResult<Tick<S>> {
         let prev_state = self.bodies.clone();
 
         macro_rules! eval {
             ($var:literal, $name:expr, Linear) => {
-                Engine::<S>::eval_impl::<S::Linear>(
+                Engine::<S>::eval_impl::<S::Linear, S::Angular>(
                     $var,
                     $name.clone(),
+
                     S::LINEAR_BASES,
+                    |x| &x.linear.displacement,
+
+                    S::ANGULAR_BASES,
+                    |x| &x.angular.displacement,
+
                     &self.env,
                     &(prev_state),
-                    |x| &x.linear.displacement,
                 )
             };
             ($var:literal, $name:expr, Angular) => {
-                Engine::<S>::eval_impl::<S::Angular>(
+                Engine::<S>::eval_impl::<S::Angular, S::Linear>(
                     $var,
                     $name.clone(),
+
                     S::ANGULAR_BASES,
+                    |x| &x.angular.displacement,
+
+                    S::LINEAR_BASES,
+                    |x| &x.linear.displacement,
+
                     &self.env,
                     &(prev_state),
-                    |x| &x.angular.displacement,
                 )
             };
         }
@@ -294,7 +345,8 @@ impl<S: Space + Clone> Engine<S> {
                 $acceleration:literal,
                 $vec_kind:ty,
                 $state:expr,
-                $kind:ident
+                $kind:ident,
+                $skip_accel:expr
             ) => {{
                 let s = eval!($displacement, $body.name, $kind)?;
 
@@ -311,7 +363,7 @@ impl<S: Space + Clone> Engine<S> {
                     } else {
                         let a = eval!($acceleration, $body.name, $kind)?;
 
-                        if let Some(a) = a {
+                        if let Some(a) = a && !$skip_accel {
                             $state.velocity = <$vec_kind>::new(
                                 a.iter()
                                     .enumerate()
@@ -352,19 +404,8 @@ impl<S: Space + Clone> Engine<S> {
             }};
         }
 
-        for mut a in self.bodies.iter_mut() {
-            for b in prev_state.iter() {
-                if a.name == b.name {
-                    continue;
-                }
-                if let Some(collision) = self.collider.collide(a, b) {
-                    Self::apply_impulse(&mut a, &b, collision, self.restitution);
-                }
-            }
-        }
-
         for body in self.bodies.iter_mut() {
-            update_state!(body, "s", "v", "a", S::Linear, body.linear, Linear);
+            update_state!(body, "s", "v", "a", S::Linear, body.linear, Linear, false);
 
             update_state!(
                 body,
@@ -373,11 +414,32 @@ impl<S: Space + Clone> Engine<S> {
                 "alpha",
                 S::Angular,
                 body.angular,
-                Angular
+                Angular,
+                false
             );
         }
 
-        Ok(())
+        let mut tick = Tick {
+            collisions: Vec::<S::Linear>::new(),
+        };
+
+        for mut a in self.bodies.iter_mut() {
+            for b in prev_state.iter() {
+                if a.name == b.name {
+                    continue;
+                }
+                if let Some(collision) = self.collider.collide(a, b) {
+                    tick.collisions.push(a.linear.displacement.plus(&collision.a));
+                    Self::apply_impulse(&mut a, &b, collision.clone(), self.restitution);
+
+                    Self::apply_correction(&self.collider, &mut a, &b, collision);
+
+                    // TODO: Friction
+                }
+            }
+        }
+
+        Ok(tick)
     }
 
     pub fn bodies(&self) -> &Vec<Body<S>> {
@@ -521,7 +583,7 @@ pub mod collide {
 
             // If they are both in-line and parallel, t will be inf as any value of t satisfies the series of
             // equations. We have to manually check for this case.
-            let (t_a, t_b) = if slope(&a_basis) == slope(&b_basis)  {
+            let (t_a, t_b) = if slope(&a_basis) == slope(&b_basis) {
                 // There is no more calculation we can do with the data here
                 return CollisionPoint::Parallel;
             } else {
@@ -534,7 +596,7 @@ pub mod collide {
                     [-*b_basis.get(1), *b_basis.get(0)],
                     [-*a_basis.get(1), *a_basis.get(0)],
                 ])
-                .scale(1.0 / (b_basis.get(0) * a_basis.get(1) - a_basis.get(0) * b_basis.get(1)));
+                    .scale(1.0 / (b_basis.get(0) * a_basis.get(1) - a_basis.get(0) * b_basis.get(1)));
 
                 let x = a_inv.multiply(&product);
 
@@ -582,7 +644,7 @@ pub mod collide {
                         basis_b.clone(),
                     );
 
-                    match boundary  {
+                    match boundary {
                         CollisionPoint::Parameterization { t_a, t_b } => {
                             let collision_point_a = a_bases.get(i).unwrap().plus(&basis_a.scale(t_a));
                             let collision_point_b = b_bases.get(j).unwrap().plus(&basis_b.scale(t_b));
@@ -597,7 +659,8 @@ pub mod collide {
                         }
                         CollisionPoint::Parallel => {
 
-                            // TODO (works without this but less complete)
+                            // Better solution would be to record parallel faces, and
+                            // take
                         }
                         CollisionPoint::NonColliding => {
                             // Nothing
@@ -616,6 +679,17 @@ pub mod collide {
                 normal: acc.normal.plus(&e.normal).unit(),
             });
 
+            if let Some(x) = result.clone() {
+                if *x.normal.get(0) == 0.0 && *x.normal.get(1) == 0.0 {
+                    // TODO slightly hacky
+                    return Some(Collision {
+                        a: x.a.clone(),
+                        b: x.b,
+                        normal: x.a.unit(),
+                    });
+                }
+            }
+
             result
         }
     }
@@ -625,6 +699,31 @@ pub mod collide {
         use super::*;
         use crate::{BodyProperties, BodyState};
         use std::f64::consts::PI;
+
+        #[test]
+        fn test_rotated_collision() {
+            let collide = Collide2D {};
+            let collision = collide.collide(
+                &Body::at_rest(
+                    "A".to_string(),
+                    Shape::Rec(2.0, 2.0),
+                    Column::vector([0.0,0.0]),
+                    Column::vector([0.0]),
+                    BodyProperties::rectangle(0.0,0.0,0.0)
+                ),
+                &Body::at_rest(
+                    "B".to_string(),
+                    Shape::Rec(2.0, 2.0),
+                    Column::vector([0.0,2.2]),
+                    Column::vector([-PI/8.0]),
+                    BodyProperties::rectangle(0.0,0.0,0.0)
+                )
+            );
+
+            if let Some(x) = collision {
+                println!("Collision: {:?}", x);
+            }
+        }
 
         // #[test]
         // fn test_collinear_collision_basis() {

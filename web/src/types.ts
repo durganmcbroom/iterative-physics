@@ -43,6 +43,7 @@ export interface BodyFormState {
     posY: number;
     velX: number;
     velY: number;
+    rot: number;
 }
 
 export interface ViewTransform {

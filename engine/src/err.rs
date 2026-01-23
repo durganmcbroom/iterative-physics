@@ -43,7 +43,7 @@ impl Display for ErrorKind {
             ErrorKind::WrongNumberOfArguments { 
                 name, expected, found
             } => {
-                write!(f, "Function {} takes {} arguments, but you only provided {}.", name, found, expected)
+                write!(f, "Function {} takes {} arguments, but you only provided {}.", name, expected, found)
             }
             ErrorKind::UnexpectedComparison => {
                 write!(f, "Unexpected equals sign!")
