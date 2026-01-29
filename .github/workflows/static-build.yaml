@@ -17,12 +17,12 @@ jobs:
           version: 'latest'
       - run: wasm-pack build
         working-directory: interop/
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v6
         with:
-          node-version: "22.19.0"
+          node-version: "24.13.0"
           registry-url: "https://registry.npmjs.org"
       - run: npm update
-      - run: npm install
+             | npm install
              | npm run build
         working-directory: web/
         env:
