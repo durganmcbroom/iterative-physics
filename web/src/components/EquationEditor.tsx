@@ -53,7 +53,7 @@ export const EquationEditor: React.FC<EquationEditorProps> = ({ equations, setEq
                 ))}
             </div>
             <div className="mt-auto p-2 text-[10px] text-gray-400 text-center">
-                Durgan McBroom. AI was used in the development of this frontend. See <a className={"border-b-1 border-gray-300"} href={"https://github.com"}>Github for more info.</a>
+                Durgan McBroom. AI was used in the development of this frontend. See <a className={"border-b-1 border-gray-300"} href={"https://github.com/durganmcbroom/iterative-physics"}>Github for more info.</a>
             </div>
         </div>
     );

@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react';
-import {Plus, X, Box, Square, Play, Settings2} from 'lucide-react';
+import {Plus, X, Box, Square, Play, Settings2, GithubIcon} from 'lucide-react';
 import type {Body, BodyFormState, Equation, Shape, Vector} from './types';
 import {createBodyState, calculateRectProperties} from './utils/physics';
 
@@ -132,6 +132,12 @@ export default function PhysicsEngine() {
                                  onClick={toggleLeftSidebar}>
                                 <Box size={16} className="text-gray-600"/>
                             </div>
+                            <a
+                                href={"https://github.com/durganmcbroom/iterative-physics"}
+                                className="p-1 bg-gray-100 rounded cursor-pointer hover:bg-gray-200"
+                            >
+                                <GithubIcon size={16} className="text-gray-600"/>
+                            </a>
                             <div className="flex items-center gap-2">
                                 <h2 className={""}></h2>
                                 <Dropdown options={Templates.map((e) => e.name)} value={template}
