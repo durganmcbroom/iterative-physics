@@ -75,7 +75,7 @@ export const Blank: TemplateState = {
     equations: []
 }
 
-export const OneBodyProblem = {
+export const TwoBodyProblem = {
     bodies: [{
         "name": "Planet",
         "color": "#0cc018",
@@ -100,12 +100,12 @@ export const OneBodyProblem = {
     ]
 }
 
-export const TwoBodyProblem = {
+export const ThreeBodyProblem = {
     bodies: [{
         "name": "Planet",
         "color": "#0cc018",
         "shape": {"type": "Rectangle", "width": 80, "height": 80},
-        "properties": {"mass": 29700000, "moi": 31680000000},
+        "properties": {"mass": 29700000000000000, "moi": 31680000000000000000},
         "linear": {"displacement": {"x": 0, "y": 0}, "velocity": {"x": 0, "y": 0}},
         "angular": {"displacement": 0, "velocity": 0}
     }, {
@@ -119,7 +119,7 @@ export const TwoBodyProblem = {
         "name": "Satellite_B",
         "color": "#3b82f6",
         "shape": {"type": "Rectangle", "width": 40, "height": 40},
-        "properties": {"mass": 300000000, "moi": 80000000000},
+        "properties": {"mass": 3000000, "moi": 800000000},
         "linear": {"displacement": {"x": -700, "y": -700}, "velocity": {"x": 220, "y": -220}},
         "angular": {"displacement": 0, "velocity": 0}
     }],
@@ -129,8 +129,8 @@ export const TwoBodyProblem = {
         "r(x,y,p_a, p_b) = sqrt((x-p_a)^2 + (y-p_b)^2)",
         "hatr(x,y,p_a, p_b) = ((x-p_a)*hati + (y-p_b)*hatj)/r(x,y,p_a,p_b)",
         "gravity(m_a,m_b,x,y,p_a, p_b)=-(G*m_a*m_b)/r(x,y,p_a,p_b)*hatr(x,y,p_a,p_b)",
-        "a_Satellite = gravity(m_Planet, m_Satellite, x_Satellite, y_Satellite, x_Planet, y_Planet) + gravity(m_Satellite, m_Satellite_B, x_Satellite, y_Satellite, x_Satellite_B, y_Satellite_B)",
-        "a_Satellite_B = gravity(m_Planet, m_Satellite_B, x_Satellite_B, y_Satellite_B, x_Planet, y_Planet) + gravity(m_Satellite, m_Satellite_B, x_Satellite_B, y_Satellite_B, x_Satellite, y_Satellite)"
+        "m_Satellite*a_Satellite = gravity(m_Planet, m_Satellite, x_Satellite, y_Satellite, x_Planet, y_Planet) + gravity(m_Satellite, m_Satellite_B, x_Satellite, y_Satellite, x_Satellite_B, y_Satellite_B)",
+        "m_Satellite_B*a_Satellite_B = gravity(m_Planet, m_Satellite_B, x_Satellite_B, y_Satellite_B, x_Planet, y_Planet) + gravity(m_Satellite, m_Satellite_B, x_Satellite_B, y_Satellite_B, x_Satellite, y_Satellite)"
     ]
 }
 
@@ -156,11 +156,51 @@ export const Pendulum = {
     ]
 }
 
+export const Springs = {
+    bodies: [{
+        "name": "Source",
+        "color": "#3b82f6",
+        "shape": {"type": "Rectangle", "width": 40, "height": 40},
+        "properties": {"mass": 1000000000000, "moi": 266666666666666.66},
+        "linear": {"displacement": {"x": 0, "y": 0}, "velocity": {"x": 0, "y": 0}},
+        "angular": {"displacement": 0, "velocity": 0}
+    }, {
+        "name": "Ideal",
+        "color": "#2e7b18",
+        "shape": {"type": "Rectangle", "width": 40, "height": 40},
+        "properties": {"mass": 10, "moi": 2666.666666666667},
+        "linear": {"displacement": {"x": 300, "y": 0}, "velocity": {"x": 0, "y": 0}},
+        "angular": {"displacement": 0, "velocity": 0}
+    }, {
+        "name": "Source 2",
+        "color": "#3b82f6",
+        "shape": {"type": "Rectangle", "width": 40, "height": 40},
+        "properties": {"mass": 1000000000000, "moi": 266666666666666.66},
+        "linear": {"displacement": {"x": 0, "y": -100}, "velocity": {"x": 0, "y": 0}},
+        "angular": {"displacement": 0, "velocity": 0}
+    }, {
+        "name": "Dampened",
+        "color": "#f73b3b",
+        "shape": {"type": "Rectangle", "width": 40, "height": 40},
+        "properties": {"mass": 1, "moi": 266.66666666666663},
+        "linear": {"displacement": {"x": 300, "y": -100}, "velocity": {"x": 0, "y": 0}},
+        "angular": {"displacement": 0, "velocity": 0}
+    }],
+    equations: [
+        "k=5",
+        "c=0.5",
+        "rest_x = 200",
+        "m_Ideal*a_Ideal = (-k*(x_Ideal-rest_x))*hati",
+        "m_Dampened*a_Dampened = (-k*(x_Dampened-rest_x)-c*(v_x_Dampened))*hati"
+    ]
+}
+
 
 export const Templates = [
     {name: "Obstacle Course", state: ObstacleCourse},
-    {name: "One body problem", state: OneBodyProblem},
     {name: "Two body problem", state: TwoBodyProblem},
+    {name: "Three body problem", state: ThreeBodyProblem},
+    {name: "Springs", state: Springs},
     {name: "Pendulum", state: Pendulum},
     {name: "Blank", state: Blank},
 ]

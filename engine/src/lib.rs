@@ -132,10 +132,10 @@ impl<S: Space + Clone> Engine<S> {
         owner: String,
 
         bases: &'static [Basis],
-        selector: fn(&Body<S>) -> &Primary,
+        selector: fn(&Body<S>) -> &BodyState<Primary>,
 
         extra_bases: &'static [Basis],
-        extra_selector: fn(&Body<S>) -> &Secondary,
+        extra_selector: fn(&Body<S>) -> &BodyState<Secondary>,
 
         env: &Environment,
         bodies: &Vec<Body<S>>,
@@ -151,18 +151,29 @@ impl<S: Space + Clone> Engine<S> {
         // Initialize body constants / properties
         for x in bodies {
             for i in 0..Primary::dof() {
-                overrides.insert(format!("{}_{}", bases[i].axis, x.name), *selector(x).get(i));
+                overrides.insert(format!("{}_{}", bases[i].axis, x.name), *selector(x).displacement.get(i));
+            }
+
+            for i in 0..Primary::dof() {
+                overrides.insert(format!("v_{}_{}", bases[i].axis, x.name), *selector(x).velocity.get(i));
             }
 
             for i in 0..Secondary::dof() {
                 overrides.insert(
                     format!("{}_{}", extra_bases[i].axis, x.name),
-                    *extra_selector(x).get(i),
+                    *extra_selector(x).displacement.get(i),
+                );
+            }
+
+            for i in 0..Secondary::dof() {
+                overrides.insert(
+                    format!("v_{}_{}", extra_bases[i].axis, x.name),
+                    *extra_selector(x).velocity.get(i),
                 );
             }
 
             overrides.insert(format!("m_{}", x.name), x.properties.mass);
-            overrides.insert(format!("I_cm_{}", x.name), x.properties.moi);
+            overrides.insert(format!("I_{}", x.name), x.properties.moi);
         }
 
         for i in 0..Primary::dof() {
@@ -326,9 +337,9 @@ impl<S: Space + Clone> Engine<S> {
                     $var,
                     $name.clone(),
                     S::LINEAR_BASES,
-                    |x| &x.linear.displacement,
+                    |x| &x.linear,
                     S::ANGULAR_BASES,
-                    |x| &x.angular.displacement,
+                    |x| &x.angular,
                     &self.env,
                     &(prev_state),
                 )
@@ -338,9 +349,9 @@ impl<S: Space + Clone> Engine<S> {
                     $var,
                     $name.clone(),
                     S::ANGULAR_BASES,
-                    |x| &x.angular.displacement,
+                    |x| &x.angular,
                     S::LINEAR_BASES,
-                    |x| &x.linear.displacement,
+                    |x| &x.linear,
                     &self.env,
                     &(prev_state),
                 )
