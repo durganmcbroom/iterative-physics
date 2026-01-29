@@ -2,7 +2,7 @@ use crate::collide::{Collide, Collision};
 use crate::err::{EngineResult, ErrorKind};
 use crate::math::integration::{leapfrog_displacement, leapfrog_velocity};
 use crate::math::solve::Environment;
-use crate::math::{Column, Vector};
+use crate::math::{Vector};
 use std::collections::HashMap;
 
 pub mod err;
@@ -107,9 +107,7 @@ pub struct Tick<S: Space> {
     pub collisions: Vec<S::Linear>,
 }
 
-const CORRECTIVE_FRAMES: usize = 100;
-const CORRECTIVE_TUNING_VALUE: f64 = 10.0;
-
+const CORRECTIVE_FRAMES: usize = 5;
 impl<S: Space + Clone> Engine<S> {
     pub fn new(
         bodies: Vec<Body<S>>,
@@ -521,7 +519,6 @@ pub mod collide {
     use crate::math::{Column, Matrix, Vector};
     use crate::spaces::Space2D;
     use crate::{Body, Shape, Space};
-    use std::collections::HashSet;
 
     fn rot_2d(deg: f64) -> Matrix<2, 2> {
         Matrix::new([[deg.cos(), -deg.sin()], [deg.sin(), deg.cos()]])
@@ -539,12 +536,6 @@ pub mod collide {
     }
 
     pub struct Collide2D {}
-
-    enum CollisionPoint {
-        Parameterization { t_a: f64, t_b: f64 },
-        Parallel,
-        NonColliding,
-    }
 
     impl Collide2D {
         pub fn new() -> Self {

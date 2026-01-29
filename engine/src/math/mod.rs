@@ -279,7 +279,6 @@ mod tests {
 
 pub mod integration {
     // Displacement, velocity
-    type ParticleState = (f64, f64);
 
     pub fn leapfrog_displacement(
         delta: f64,

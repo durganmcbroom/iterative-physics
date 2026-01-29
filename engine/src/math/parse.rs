@@ -113,7 +113,7 @@ impl<'a> Lexer<'a> {
             }
 
             let str = number.iter().map(|c| *c).collect::<String>();
-            let float = str.parse::<f64>().map_err(|x| {
+            let float = str.parse::<f64>().map_err(|_x| {
                 Error::new(ErrorKind::InvalidMathSyntax(
                     "Unable to convert number to float. ",
                 ))

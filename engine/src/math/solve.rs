@@ -124,7 +124,7 @@ impl Environment {
     fn analyze(node: &Node, dependencies: &mut HashSet<String>) {
         match node {
             Node::Arithmetic {
-                operation,
+                operation: _,
                 left,
                 right,
             } => {
@@ -227,7 +227,7 @@ pub struct Frame<'a> {
 }
 
 impl<'a> Frame<'a> {
-    pub fn push(&self, equation: &Equation) -> Frame {
+    pub fn push(&self, equation: &Equation) -> Frame<'_> {
         let mut clone = self.clone();
         clone.stack.insert(equation.id);
         clone.clear_locals();
@@ -257,6 +257,7 @@ impl<'a> Frame<'a> {
             .or(self.memo.borrow().get(name).cloned())
     }
 
+    #[cfg(test)]
     pub(crate) fn empty(environment: &'a Environment) -> Frame<'a> {
         Frame {
             environment,
@@ -418,7 +419,7 @@ pub fn evaluate(node: &Node, frame: Frame) -> EngineResult<f64> {
                 }
             }
         }
-        Node::Comparison { left, right } => Err(Error::new(UnexpectedComparison)),
+        Node::Comparison { left:_, right:_ } => Err(Error::new(UnexpectedComparison)),
     }
 }
 
