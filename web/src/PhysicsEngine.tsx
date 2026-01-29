@@ -9,8 +9,11 @@ import {BodyForm} from './components/BodyForm';
 import {useNotifications} from "./components/Notification.tsx";
 import {Dropdown} from "./components/Dropdown.tsx";
 import {Templates} from "./templates.ts";
+import {useWasm} from "./hooks/useWasm.ts";
 
-export default function App() {
+export default function PhysicsEngine() {
+    useWasm()
+
     // --- Layout State ---
     const [leftOpen, setLeftOpen] = useState(true);
     const [rightOpen, setRightOpen] = useState(false);
@@ -151,7 +154,7 @@ export default function App() {
                 <div
                     className={`flex items-center gap-4`}
                 >
-                    <Dropdown options={[...bodies.map((n) => n.name),"None"]} value={track}
+                    <Dropdown options={[...bodies.map((n) => n.name), "None"]} value={track}
                               onChange={(it) => {
                                   if (it == "None") {
                                       setTrack(null);
@@ -174,6 +177,9 @@ export default function App() {
                         <span>Bodies</span>
                     </button>
                     <button
+                        onClick={() => {
+                            notifications.info("This is not available yet.")
+                        }}
                         className={`rounded-md p-1 hover:bg-gray-100`}
                     >
                         <Settings2 size={24}/>

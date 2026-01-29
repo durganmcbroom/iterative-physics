@@ -152,7 +152,7 @@ export const Pendulum = {
     }],
     equations: [
         "s_Pendulum = (200sin(theta_Pendulum))hati+(-200cos(theta_Pendulum))hatj",
-        "alpha_Pendulum*I_cm_Pendulum=(200*(m_Pendulum*-100)*sin(theta_Pendulum))hatk"
+        "alpha_Pendulum*I_Pendulum=(200*(m_Pendulum*-100)*sin(theta_Pendulum))hatk"
     ]
 }
 
@@ -194,7 +194,6 @@ export const Springs = {
         "m_Dampened*a_Dampened = (-k*(x_Dampened-rest_x)-c*(v_x_Dampened))*hati"
     ]
 }
-
 
 export const Templates = [
     {name: "Obstacle Course", state: ObstacleCourse},
