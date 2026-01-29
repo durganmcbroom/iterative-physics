@@ -19,7 +19,7 @@ jobs:
         working-directory: interop/
       - uses: actions/setup-node@v3
         with:
-          node-version: "19.8.1"
+          node-version: "22.19.0"
           registry-url: "https://registry.npmjs.org"
       - run: npm update
       - run: npm install
