@@ -1,6 +1,6 @@
-use std::fmt::{write, Display, Formatter};
+use std::fmt::{Display, Formatter};
 
-pub type EngineResult<T> = std::result::Result<T, Error>;
+pub type EngineResult<T> = Result<T, Error>;
 
 #[derive(Debug)]
 pub struct Error {
@@ -15,7 +15,6 @@ impl Error {
 
 #[derive(Debug, Clone)]
 pub enum ErrorKind {
-    // Math
     UnsatisfiedVariable(String),
     UnsatisfiedFunction(String),
 

@@ -11,14 +11,14 @@ export const ObstacleCourse: TemplateState = {
         "color": "#3b82f6",
         "shape": {"type": "Rectangle", "width": 50, "height": 50},
         "properties": {"mass": 10, "moi": 4166.666666666667},
-        "linear": {"displacement": {"x": 0, "y": 0}, "velocity": {"x": 0, "y": 0}},
+        "linear": {"displacement": {"x": 0, "y": 300}, "velocity": {"x": 0, "y": 0}},
         "angular": {"displacement": 0, "velocity": 0}
     }, {
         "name": "Bumper 1",
         "color": "#f73b3b",
         "shape": {"type": "Rectangle", "width": 200, "height": 20},
         "properties": {"mass": 10000000000, "moi": 33666666666666.668},
-        "linear": {"displacement": {"x": 50, "y": -200}, "velocity": {"x": 0, "y": 0}},
+        "linear": {"displacement": {"x": 50, "y": 0}, "velocity": {"x": 0, "y": 0}},
         "angular": {"displacement": 0.47123889803846897, "velocity": 0}
     }, {
         "name": "Bumper 2",
@@ -31,7 +31,7 @@ export const ObstacleCourse: TemplateState = {
         "name": "B",
         "color": "#3fac11",
         "shape": {"type": "Rectangle", "width": 40, "height": 40},
-        "properties": {"mass": 1, "moi": 266.66666666666663},
+        "properties": {"mass": 10, "moi": 2666.666666666667},
         "linear": {"displacement": {"x": -300, "y": 200}, "velocity": {"x": 0, "y": 0}},
         "angular": {"displacement": 0, "velocity": 0}
     }, {
@@ -44,8 +44,8 @@ export const ObstacleCourse: TemplateState = {
     }, {
         "name": "Bumper 4",
         "color": "#f73b3b",
-        "shape": {"type": "Rectangle", "width": 200, "height": 20},
-        "properties": {"mass": 10000000000000, "moi": 33666666666666668},
+        "shape": {"type": "Rectangle", "width": 800, "height": 20},
+        "properties": {"mass": 10000000000000, "moi": 533666666666666700},
         "linear": {"displacement": {"x": -1150, "y": -500}, "velocity": {"x": 0, "y": 0}},
         "angular": {"displacement": -1.413716694115407, "velocity": 0}
     }, {
@@ -134,10 +134,33 @@ export const TwoBodyProblem = {
     ]
 }
 
+export const Pendulum = {
+    bodies: [{
+        "name": "Pendulum",
+        "color": "#3b82f6",
+        "shape": {"type": "Rectangle", "width": 20, "height": 400},
+        "properties": {"mass": 10, "moi": 133666.6666666667},
+        "linear": {"displacement": {"x": 0, "y": -200}, "velocity": {"x": 0, "y": 0}},
+        "angular": {"displacement": 0, "velocity": 0}
+    }, {
+        "name": "Collider",
+        "color": "#3b82f6",
+        "shape": {"type": "Rectangle", "width": 40, "height": 40},
+        "properties": {"mass": 5, "moi": 1333.3333333333335},
+        "linear": {"displacement": {"x": -100, "y": -300}, "velocity": {"x": 50, "y": 0}},
+        "angular": {"displacement": 0.7853981633974483, "velocity": 0}
+    }],
+    equations: [
+        "s_Pendulum = (200sin(theta_Pendulum))hati+(-200cos(theta_Pendulum))hatj",
+        "alpha_Pendulum*I_cm_Pendulum=(200*(m_Pendulum*-100)*sin(theta_Pendulum))hatk"
+    ]
+}
+
 
 export const Templates = [
     {name: "Obstacle Course", state: ObstacleCourse},
     {name: "One body problem", state: OneBodyProblem},
     {name: "Two body problem", state: TwoBodyProblem},
+    {name: "Pendulum", state: Pendulum},
     {name: "Blank", state: Blank},
 ]

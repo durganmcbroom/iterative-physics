@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use crate::collide::{Collide, Collision};
 use crate::err::{EngineResult, ErrorKind};
 use crate::math::integration::{leapfrog_displacement, leapfrog_velocity};
@@ -20,8 +19,6 @@ pub trait Space {
 
     const LINEAR_BASES: &'static [Basis];
     const ANGULAR_BASES: &'static [Basis];
-
-
 
     fn cross_both(w: &Self::Angular, r: &Self::Linear) -> Self::Linear;
     fn cross_linear(a: &Self::Linear, b: &Self::Linear) -> Self::Angular;
@@ -49,24 +46,24 @@ impl BodyProperties {
         }
     }
 
-    pub fn rectangle(mass: f64, height: f64, width: f64) -> BodyProperties {
-        let moi = mass / 12.0 * (height.powi(2) + width.powi(2));
+    pub fn rectangle(mass: f64, width: f64, height: f64) -> BodyProperties {
+        let moi = mass / 12.0 * (width.powi(2) + height.powi(2));
 
         BodyProperties { mass, moi }
     }
 }
 
 #[derive(Clone)]
-pub enum Shape {
+pub enum Shape<S: Space> {
     Rec(f64, f64),     // Width, height
     Ellipse(f64, f64), // major/minor axis
-    Manifold(Vec<Column<3>>),
+    Manifold(Vec<S::Linear>),
 }
 
 #[derive(Clone)]
 pub struct Body<S: Space> {
     pub name: String,
-    pub shape: Shape,
+    pub shape: Shape<S>,
     pub linear: BodyState<S::Linear>,
     pub angular: BodyState<S::Angular>,
     pub properties: BodyProperties,
@@ -75,7 +72,7 @@ pub struct Body<S: Space> {
 impl<S: Space> Body<S> {
     pub fn at_rest(
         name: String,
-        shape: Shape,
+        shape: Shape<S>,
         position: S::Linear,
         rotation: S::Angular,
         properties: BodyProperties,
@@ -111,6 +108,7 @@ pub struct Tick<S: Space> {
 }
 
 const CORRECTIVE_FRAMES: usize = 100;
+const CORRECTIVE_TUNING_VALUE: f64 = 10.0;
 
 impl<S: Space + Clone> Engine<S> {
     pub fn new(
@@ -157,7 +155,10 @@ impl<S: Space + Clone> Engine<S> {
             }
 
             for i in 0..Secondary::dof() {
-                overrides.insert(format!("{}_{}", extra_bases[i].axis, x.name), *extra_selector(x).get(i));
+                overrides.insert(
+                    format!("{}_{}", extra_bases[i].axis, x.name),
+                    *extra_selector(x).get(i),
+                );
             }
 
             overrides.insert(format!("m_{}", x.name), x.properties.mass);
@@ -201,19 +202,20 @@ impl<S: Space + Clone> Engine<S> {
 
         // --- 1. Calculate Relative Velocity (v_rel) ---
         // v_point = v_linear + (w x r)
-        // We use S::cross_angular for the (w x r) term
+        let pen_a = &collision.point.plus(&a.linear.displacement.scale(-1.0));
+        let pen_b = &collision.point.plus(&b.linear.displacement.scale(-1.0));
+
         let v_a_point = a
             .linear
             .velocity
-            .plus(&S::cross_both(&a.angular.velocity, &collision.a));
+            .plus(&S::cross_both(&a.angular.velocity, pen_a));
 
         let v_b_point = b
             .linear
             .velocity
-            .plus(&S::cross_both(&b.angular.velocity, &collision.b));
+            .plus(&S::cross_both(&b.angular.velocity, pen_b));
 
         // v_rel = v_b - v_a
-        // Assuming you have a minus, otherwise: b.plus(a.scale(-1.0))
         let v_rel = v_b_point.plus(&v_a_point.scale(-1.0));
         let v_rel_n = v_rel.dot(&n);
 
@@ -236,12 +238,9 @@ impl<S: Space + Clone> Engine<S> {
 
         // --- 3. Angular Terms ---
         // ((r x n)^2) / I
-        // We use S::cross_linear for (r x n)
-        let rxn_a = S::cross_linear(&collision.a, &n);
-        let rxn_b = S::cross_linear(&collision.b, &n);
+        let rxn_a = S::cross_linear(&pen_a, &n);
+        let rxn_b = S::cross_linear(&pen_b, &n);
 
-        // In 2D: rxn is Scalar. magnitude^2 is just value^2.
-        // In 3D: rxn is Vector. magnitude^2 is dot(self, self).
         let ang_a = if a.properties.moi > 0.0 {
             rxn_a.magnitude().powi(2) / a.properties.moi
         } else {
@@ -267,15 +266,31 @@ impl<S: Space + Clone> Engine<S> {
     }
 
     // Just applying impulse to A.
-    fn apply_impulse(a: &mut Body<S>, b: &Body<S>, collision: Collision<S>, restitution: f64) {
+    fn apply_impulse(a: &mut Body<S>, b: &mut Body<S>, collision: Collision<S>, restitution: f64) {
         let impulse = Self::calculate_impulse(a, b, &collision, restitution);
 
-        let delta_v = collision.normal.scale(impulse / a.properties.mass);
-        let delta_omega =
-            S::cross_linear(&collision.a, &collision.normal.scale(impulse / a.properties.moi));
+        println!("impulse = {:?}", impulse);
+        macro_rules! do_apply {
+            ($body:ident, $inv:literal) => {{
+                let delta_v = &collision
+                    .normal
+                    .scale($inv * impulse / $body.properties.mass);
 
-        a.linear.velocity = a.linear.velocity.plus(&delta_v.scale(-1.0));
-        a.angular.velocity = a.angular.velocity.plus(&delta_omega);
+                let delta_omega = S::cross_linear(
+                    &collision.point.plus(&$body.linear.displacement.scale(-1.0)),
+                    &collision
+                        .normal
+                        .scale($inv * impulse / $body.properties.moi),
+                );
+
+                $body.linear.velocity = $body.linear.velocity.plus(&delta_v);
+                $body.angular.velocity = $body.angular.velocity.plus(&delta_omega);
+            }};
+        }
+
+        do_apply!(a, -1.0);
+        do_apply!(b, 1.0);
+        // do_apply!(b, -1.0);
     }
 
     // Push A away
@@ -283,20 +298,21 @@ impl<S: Space + Clone> Engine<S> {
         collider: &Box<dyn Collide<S>>,
         a: &mut Body<S>,
         b: &Body<S>,
-        mut collision: Collision<S>
+        mut collision: Collision<S>,
     ) {
         // Start with the inverse of the distance between them. (Small distance, large correction, etc.) and account for mass.
         for _ in 0..CORRECTIVE_FRAMES {
-            let correction = 1.0
-                    / a.linear.displacement.plus(&b.linear.displacement.scale(-1.0)).magnitude()
-                    / a.properties.mass;
+            let correction = collision.depth / a.properties.mass;
 
-            a.linear.displacement = a.linear.displacement.plus(&collision.normal.scale(-correction));
+            a.linear.displacement = a
+                .linear
+                .displacement
+                .plus(&collision.normal.scale(-correction));
 
             if let Some(c) = collider.collide(a, b) {
                 collision = c;
             } else {
-                break
+                break;
             }
         }
     }
@@ -309,13 +325,10 @@ impl<S: Space + Clone> Engine<S> {
                 Engine::<S>::eval_impl::<S::Linear, S::Angular>(
                     $var,
                     $name.clone(),
-
                     S::LINEAR_BASES,
                     |x| &x.linear.displacement,
-
                     S::ANGULAR_BASES,
                     |x| &x.angular.displacement,
-
                     &self.env,
                     &(prev_state),
                 )
@@ -324,13 +337,10 @@ impl<S: Space + Clone> Engine<S> {
                 Engine::<S>::eval_impl::<S::Angular, S::Linear>(
                     $var,
                     $name.clone(),
-
                     S::ANGULAR_BASES,
                     |x| &x.angular.displacement,
-
                     S::LINEAR_BASES,
                     |x| &x.linear.displacement,
-
                     &self.env,
                     &(prev_state),
                 )
@@ -351,7 +361,13 @@ impl<S: Space + Clone> Engine<S> {
                 let s = eval!($displacement, $body.name, $kind)?;
 
                 if let Some(s) = s {
+                    let old_displacement = $state.displacement.clone();
                     $state.displacement = <$vec_kind>::new(s)?;
+
+                    $state.velocity = $state
+                        .displacement
+                        .plus(&old_displacement.scale(-1.0))
+                        .scale(self.delta_t);
                 } else {
                     let v = eval!($velocity, $body.name, $kind)?;
 
@@ -363,7 +379,9 @@ impl<S: Space + Clone> Engine<S> {
                     } else {
                         let a = eval!($acceleration, $body.name, $kind)?;
 
-                        if let Some(a) = a && !$skip_accel {
+                        if let Some(a) = a
+                            && !$skip_accel
+                        {
                             $state.velocity = <$vec_kind>::new(
                                 a.iter()
                                     .enumerate()
@@ -423,16 +441,20 @@ impl<S: Space + Clone> Engine<S> {
             collisions: Vec::<S::Linear>::new(),
         };
 
-        for mut a in self.bodies.iter_mut() {
-            for b in prev_state.iter() {
-                if a.name == b.name {
-                    continue;
-                }
-                if let Some(collision) = self.collider.collide(a, b) {
-                    tick.collisions.push(a.linear.displacement.plus(&collision.a));
-                    Self::apply_impulse(&mut a, &b, collision.clone(), self.restitution);
+        for i in 0..self.bodies.len() {
+            let (left, right) = self.bodies.split_at_mut(i + 1);
+            let a = &mut left[i];
 
-                    Self::apply_correction(&self.collider, &mut a, &b, collision);
+            for j in 0..right.len() {
+                let b = &mut right[j];
+
+                if let Some(collision) = self.collider.collide(a, b) {
+                    tick.collisions.push(collision.point.clone());
+
+                    Self::apply_impulse(a, b, collision.clone(), self.restitution);
+
+                    Self::apply_correction(&self.collider, a, b, collision.clone());
+                    Self::apply_correction(&self.collider, b, a, collision);
 
                     // TODO: Friction
                 }
@@ -444,32 +466,6 @@ impl<S: Space + Clone> Engine<S> {
 
     pub fn bodies(&self) -> &Vec<Body<S>> {
         &self.bodies
-    }
-
-    pub fn print_diagnostics(&self) {
-        println!("Engine state:");
-        println!("Bodies: -----");
-
-        fn to_string<T: Vector>(v: &T) -> String {
-            let mut output = "".to_string();
-            for i in 0..T::dof() {
-                output += v.get(i).to_string().as_str();
-                if i < T::dof() - 1 {
-                    output += ", ";
-                }
-            }
-
-            output
-        }
-
-        for x in self.bodies.iter() {
-            println!(
-                "-> {}: ({}) - {{{}}}",
-                x.name,
-                to_string(&x.linear.displacement),
-                to_string(&x.linear.velocity),
-            )
-        }
     }
 }
 
@@ -494,6 +490,7 @@ pub mod spaces {
                 axis: "y",
             },
         ];
+
         const ANGULAR_BASES: &'static [Basis] = &[Basis {
             name: "hatk",
             axis: "theta",
@@ -513,6 +510,7 @@ pub mod collide {
     use crate::math::{Column, Matrix, Vector};
     use crate::spaces::Space2D;
     use crate::{Body, Shape, Space};
+    use std::collections::HashSet;
 
     fn rot_2d(deg: f64) -> Matrix<2, 2> {
         Matrix::new([[deg.cos(), -deg.sin()], [deg.sin(), deg.cos()]])
@@ -520,9 +518,9 @@ pub mod collide {
 
     #[derive(Debug, Clone)]
     pub struct Collision<S: Space> {
-        pub a: S::Linear,
-        pub b: S::Linear,
+        pub point: S::Linear,
         pub normal: S::Linear, // Relative to A
+        pub depth: f64,        // Relative to A
     }
 
     pub trait Collide<S: Space> {
@@ -557,9 +555,7 @@ pub mod collide {
                 Shape::Ellipse(_, _) => {
                     todo!()
                 }
-                Shape::Manifold(_) => {
-                    todo!()
-                }
+                Shape::Manifold(p) => p.clone(),
             };
 
             let transformation = rot_2d(body.angular.displacement.content[0][0]);
@@ -569,14 +565,13 @@ pub mod collide {
                 .map(|x| transformation.multiply(&x))
                 .collect::<Vec<_>>()
         }
-        /// Determine the collision boundary between two basis
-        fn intersection_point(
-            a: Column<2>,
-            a_basis: Column<2>,
-            b: Column<2>,
-            b_basis: Column<2>,
-            //       a  , b
-        ) -> CollisionPoint {
+
+        fn intersect(
+            a: &Column<2>,
+            a_basis: &Column<2>,
+            b: &Column<2>,
+            b_basis: &Column<2>,
+        ) -> Option<(f64, f64)> {
             fn slope(col: &Column<2>) -> f64 {
                 col.get(1) / col.get(0)
             }
@@ -585,7 +580,8 @@ pub mod collide {
             // equations. We have to manually check for this case.
             let (t_a, t_b) = if slope(&a_basis) == slope(&b_basis) {
                 // There is no more calculation we can do with the data here
-                return CollisionPoint::Parallel;
+                return None;
+                // return CollisionPoint::Parallel;
             } else {
                 // If slopes aren't the same, find the parameterized point of intersection
                 // Ax=B => x=A^-1*B
@@ -596,29 +592,55 @@ pub mod collide {
                     [-*b_basis.get(1), *b_basis.get(0)],
                     [-*a_basis.get(1), *a_basis.get(0)],
                 ])
-                    .scale(1.0 / (b_basis.get(0) * a_basis.get(1) - a_basis.get(0) * b_basis.get(1)));
+                .scale(1.0 / (b_basis.get(0) * a_basis.get(1) - a_basis.get(0) * b_basis.get(1)));
 
                 let x = a_inv.multiply(&product);
 
                 (*x.get(0), *x.get(1))
             };
 
+            Some((t_a, t_b))
+        }
+
+        /// Determine the collision boundary between two basis
+        fn intersection_point(
+            a: &Column<2>,
+            a_basis: &Column<2>,
+            b: &Column<2>,
+            b_basis: &Column<2>,
+            //       a  , b
+        ) -> Option<Column<2>> {
+            let (t_a, t_b) = Self::intersect(a, a_basis, b, b_basis)?;
+
             if t_a >= 0.0 && t_a <= 1.0 && t_b >= 0.0 && t_b <= 1.0 {
-                CollisionPoint::Parameterization { t_a, t_b }
+                Some(a.plus(&a_basis.scale(t_a)))
+                // CollisionPoint::Parameterization { t_a, t_b }
             } else {
-                CollisionPoint::NonColliding
+                None
             }
         }
     }
 
+    // Point to line (defined by two points) distance
+    fn ptl_distance(point: &Column<2>, a: &Column<2>, b: &Column<2>) -> f64 {
+        let numerator =
+            (b[1] - a[1]) * point[0] - (b[0] - a[0]) * point[1] + b[0] * a[1] - b[1] * a[0];
+
+        let denominator = ((b[1] - a[1]).powi(2) + (b[0] - a[0]).powi(2)).sqrt();
+
+        numerator.abs() / denominator
+    }
+
     impl Collide<Space2D> for Collide2D {
+        // Runs in NlogN
         fn collide(&self, a: &Body<Space2D>, b: &Body<Space2D>) -> Option<Collision<Space2D>> {
             // Each basis is a vector from the centroid of the object to a point of its face
             let a_bases = Self::bases(a);
             let b_bases = Self::bases(b);
 
-            let mut collisions = Vec::<Collision<Space2D>>::new();
-
+            // World-Space
+            let mut intersection_groups = Vec::<Vec<Column<2>>>::new();
+            let mut collisions = 0;
             macro_rules! basis {
                 ($bases:expr, $i:expr) => {
                     // current point - next_point = current basis
@@ -633,64 +655,154 @@ pub mod collide {
                 let point_a = a_bases.get(i).unwrap().plus(&a.linear.displacement);
                 let basis_a = basis!(a_bases, i);
 
+                let mut intersections = Vec::<Column<2>>::new();
+
                 for j in 0..b_bases.len() {
                     let point_b = b_bases.get(j).unwrap().plus(&b.linear.displacement);
                     let basis_b = basis!(b_bases, j);
 
-                    let boundary = Self::intersection_point(
-                        point_a.clone(),
-                        basis_a.clone(),
-                        point_b.clone(),
-                        basis_b.clone(),
-                    );
+                    let intersection =
+                        Self::intersection_point(&point_a, basis_a, &point_b, basis_b);
 
-                    match boundary {
-                        CollisionPoint::Parameterization { t_a, t_b } => {
-                            let collision_point_a = a_bases.get(i).unwrap().plus(&basis_a.scale(t_a));
-                            let collision_point_b = b_bases.get(j).unwrap().plus(&basis_b.scale(t_b));
+                    if let Some(intersection) = intersection {
+                        intersections.push(intersection);
+                        collisions += 1;
+                    }
+                }
 
-                            let normal = Matrix::vector([*basis_a.get(1), -basis_a.get(0)]);
+                intersection_groups.push(intersections);
+            }
 
-                            collisions.push(Collision {
-                                a: collision_point_a,
-                                b: collision_point_b,
-                                normal,
-                            })
-                        }
-                        CollisionPoint::Parallel => {
+            if collisions == 0 {
+                return None;
+            }
 
-                            // Better solution would be to record parallel faces, and
-                            // take
-                        }
-                        CollisionPoint::NonColliding => {
-                            // Nothing
-                        }
+            // World-Space
+            let collision_point = intersection_groups
+                .iter()
+                .flatten()
+                .fold(Column::empty(), |acc, it| acc.plus(&it))
+                .scale(1.0 / collisions as f64);
+
+            let intersections = intersection_groups
+                .into_iter()
+                .flat_map(|mut group| {
+                    group.sort_unstable_by(|a, b| {
+                        // Note that this will not handle points collinear with the intersection_point (could create instability)
+                        let a = a.plus(&collision_point.scale(-1.0));
+                        let a = (a[1] - a[0]).atan();
+
+                        let b = b.plus(&collision_point.scale(-1.0));
+                        let b = (b[1] - b[0]).atan();
+
+                        a.partial_cmp(&b).unwrap()
+                    });
+                    group
+                })
+                .collect::<Vec<_>>();
+
+            let normal_face = intersections
+                .iter()
+                .zip(intersections.iter().cycle().skip(1))
+                .min_by(|(a1, b1), (a2, b2)| {
+                    ptl_distance(&collision_point, a1, b1).total_cmp(&ptl_distance(
+                        &collision_point,
+                        a2,
+                        b2,
+                    ))
+                })?;
+
+            let normal_face = normal_face.0.plus(&normal_face.1.scale(-1.0));
+            let normal = Column::vector([-normal_face[1], normal_face[0]]);
+
+            // A vector of polygons alternating side
+            let mut polygons: Vec<Vec<Column<2>>> = vec![vec![]];
+            let mut side = 0.0;
+
+            for (i, point) in a_bases.iter().enumerate() {
+                let point = point.plus(&a.linear.displacement);
+
+                if side == 0.0 {
+                    let (t, _) =
+                        Self::intersect(&point, &normal, &collision_point, &normal_face).unwrap();
+
+                    if t != 0.0 {
+                        side = t / t.abs()
+                    }
+                }
+
+                let len = polygons.len();
+                polygons[len - 1].push(point.clone());
+
+                let next = a_bases
+                    .get((i + 1) % a_bases.len())
+                    .unwrap()
+                    .plus(&a.linear.displacement);
+
+                let face = next.plus(&point.scale(-1.0));
+
+                if let Some((t, _)) = Self::intersect(&point, &face, &collision_point, &normal_face)
+                    && t >= 0.0
+                    && t < 1.0
+                {
+                    let intersection_point = point.plus(&face.scale(t));
+
+                    polygons[len - 1].push(intersection_point.clone());
+
+                    let mut new_polygon = vec![];
+                    new_polygon.push(intersection_point);
+                    polygons.push(new_polygon);
+                }
+
+                if i == a_bases.len() - 1
+                    && let Some(pop) = polygons.pop()
+                    && let Some(first) = polygons.first_mut()
+                {
+                    for x in pop {
+                        first.push(x)
                     }
                 }
             }
 
-            if collisions.is_empty() {
-                return None;
+            // https://en.wikipedia.org/wiki/Shoelace_formula
+            fn do_sum(polygons: &Vec<Vec<Column<2>>>, skip: usize) -> f64 {
+                polygons
+                    .iter()
+                    .skip(skip)
+                    .step_by(2)
+                    .map(|poly| {
+                        poly.iter()
+                            .zip(poly.iter().cycle().skip(1))
+                            .map(|(a, b)| Matrix::new([[a[0], b[0]], [a[1], b[1]]]).det())
+                            .sum::<f64>()
+                    })
+                    .sum::<f64>()
+                    / 2.0
             }
 
-            let result = collisions.clone().into_iter().reduce(|acc, e| Collision {
-                a: acc.a.plus(&e.a).scale(0.5),
-                b: acc.b.plus(&e.b).scale(0.5),
-                normal: acc.normal.plus(&e.normal).unit(),
-            });
+            let (area_a, area_b) = (do_sum(&polygons, 0), do_sum(&polygons, 1));
 
-            if let Some(x) = result.clone() {
-                if *x.normal.get(0) == 0.0 && *x.normal.get(1) == 0.0 {
-                    // TODO slightly hacky
-                    return Some(Collision {
-                        a: x.a.clone(),
-                        b: x.b,
-                        normal: x.a.unit(),
-                    });
-                }
-            }
+            let area_modifier = if area_a > area_b { 1.0 } else { -1.0 };
 
-            result
+            let normal = normal.scale(side * area_modifier).unit();
+
+            let penetration_depth = a_bases
+                .iter()
+                .zip(a_bases.iter().cycle().skip(1))
+                .map(|(base_a, base_b)| {
+                    ptl_distance(
+                        &collision_point,
+                        &a.linear.displacement.plus(&base_a),
+                        &a.linear.displacement.plus(&base_b),
+                    )
+                })
+                .min_by(|a, b| a.partial_cmp(b).unwrap());
+
+            Some(Collision {
+                point: collision_point,
+                normal,
+                depth: penetration_depth.unwrap_or(0.0),
+            })
         }
     }
 
@@ -707,17 +819,17 @@ pub mod collide {
                 &Body::at_rest(
                     "A".to_string(),
                     Shape::Rec(2.0, 2.0),
-                    Column::vector([0.0,0.0]),
+                    Column::vector([0.0, 0.0]),
                     Column::vector([0.0]),
-                    BodyProperties::rectangle(0.0,0.0,0.0)
+                    BodyProperties::rectangle(0.0, 0.0, 0.0),
                 ),
                 &Body::at_rest(
                     "B".to_string(),
                     Shape::Rec(2.0, 2.0),
-                    Column::vector([0.0,2.2]),
-                    Column::vector([-PI/8.0]),
-                    BodyProperties::rectangle(0.0,0.0,0.0)
-                )
+                    Column::vector([0.0, 2.2]),
+                    Column::vector([-PI / 8.0]),
+                    BodyProperties::rectangle(0.0, 0.0, 0.0),
+                ),
             );
 
             if let Some(x) = collision {
