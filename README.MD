@@ -1,6 +1,6 @@
 # 🌌 Iterative Physics Simulation
 
-Welcome to the documentation hub. This project implements a custom physics engine built from scratch, featuring a recursive descent parser, a numerical equation solver, and a symplectic integrator for 2D rigid body dynamics.
+This project implements a custom physics engine built from scratch, featuring a recursive descent parser, a numerical equation solver, and a symplectic integrator for 2D rigid body dynamics.
 
 Below is an overview of the implementation details and the architectural decisions behind them.
 
